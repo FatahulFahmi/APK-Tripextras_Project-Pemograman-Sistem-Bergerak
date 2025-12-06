@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "819034955091",
+    "project_id": "tripextras-32f8c",
+    "storage_bucket": "tripextras-32f8c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:819034955091:android:4a7834c89323e6c6dc15a6",
+        "android_client_info": {
+          "package_name": "com.example.tripextras_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBGtCHZtqLxYAdWymcMb5bd-hM4wRwwY9I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
