@@ -1,3 +1,3 @@
-# tripextras_project
+# Tripextras Project
 
 A new Flutter project.
