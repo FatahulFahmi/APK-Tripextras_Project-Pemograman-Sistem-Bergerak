@@ -1,6 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Import Wajib Firestore
 import 'package:flutter/material.dart';
-import '../../../constants/colors.dart'; // Pastikan file ini ada
-import 'search_result_screen.dart'; // Pastikan file ini sudah dibuat sebelumnya
+import 'package:intl/intl.dart';
+import '../../constants/colors.dart';
+import 'search_result_screen.dart';
 
 class FlightScreen extends StatefulWidget {
   const FlightScreen({super.key});
@@ -10,13 +12,13 @@ class FlightScreen extends StatefulWidget {
 }
 
 class _FlightScreenState extends State<FlightScreen> {
-  // Controller untuk input teks
-  final TextEditingController fromController = TextEditingController();
-  final TextEditingController toController = TextEditingController();
+  // Variabel untuk menyimpan pilihan Dropdown
+  String? _selectedOrigin;
+  String? _selectedDestination;
 
-  // Variabel State
+  // Variabel State Lainnya
   DateTime selectedDate = DateTime.now();
-  int passengers = 1; // Ubah ke int agar mudah diolah
+  int passengers = 1;
   String seatClass = 'Economy';
 
   // Fungsi Memilih Tanggal
@@ -30,7 +32,7 @@ class _FlightScreenState extends State<FlightScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Colors.blueAccent, // Warna header kalender
+              primary: Colors.blueAccent,
               onPrimary: Colors.white,
               onSurface: Colors.black,
             ),
@@ -46,11 +48,19 @@ class _FlightScreenState extends State<FlightScreen> {
     }
   }
 
+  // Fungsi Tukar Lokasi
+  void _swapLocations() {
+    setState(() {
+      final temp = _selectedOrigin;
+      _selectedOrigin = _selectedDestination;
+      _selectedDestination = temp;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Fallback warna jika AppColors belum diatur
-    const Color primaryColor = Colors.blueAccent; 
-    // Jika AppColors.primary error, ganti dengan primaryColor
+    // Warna tema
+    const Color primaryColor = Colors.blueAccent;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FF),
@@ -59,233 +69,426 @@ class _FlightScreenState extends State<FlightScreen> {
         elevation: 0,
         centerTitle: true,
         title: const Text(
-          'Book Your Flight',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+          'Cari Penerbangan',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () {
-            Navigator.pop(context);
-          },
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView( // Agar tidak overflow di layar kecil
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Destination',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // 🧳 Card Utama Input
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 6,
-                      offset: Offset(0, 3),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // ===========================
+            // HEADER & FORM AREA
+            // ===========================
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // 1. Background Biru Melengkung
+                Container(
+                  height: 180,
+                  width: double.infinity,
+                  decoration: const BoxDecoration(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(30),
+                      bottomRight: Radius.circular(30),
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Asal Bandara
-                    TextField(
-                      controller: fromController,
-                      decoration: const InputDecoration(
-                        icon: Icon(Icons.flight_takeoff, color: Colors.black54),
-                        labelText: 'From',
-                        hintText: 'Enter departure city',
-                        border: InputBorder.none,
-                      ),
-                    ),
-                    const Divider(),
-                    // Tujuan Bandara
-                    TextField(
-                      controller: toController,
-                      decoration: const InputDecoration(
-                        icon: Icon(Icons.flight_land, color: Colors.black54),
-                        labelText: 'To',
-                        hintText: 'Enter destination city',
-                        border: InputBorder.none,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Tanggal
-                    InkWell(
-                      onTap: () => _selectDate(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 12, horizontal: 10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF2F5FF),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today, color: Colors.black54),
-                            const SizedBox(width: 10),
-                            Text(
-                              '${selectedDate.day} ${_monthName(selectedDate.month)} ${selectedDate.year}',
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Penumpang & Kelas
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Opsi Penumpang
-                        _OptionBox(
-                          icon: Icons.person,
-                          label: '$passengers Person',
-                          onTap: () {
-                            setState(() {
-                              // Logika sederhana: tambah 1, jika > 5 balik ke 1
-                              passengers = passengers >= 5 ? 1 : passengers + 1;
-                            });
-                          },
-                        ),
-                        const SizedBox(width: 10),
-                        // Opsi Kelas Kursi
-                        _OptionBox(
-                          icon: Icons.chair,
-                          label: seatClass,
-                          onTap: () {
-                            setState(() {
-                              seatClass = seatClass == 'Business'
-                                  ? 'Economy'
-                                  : 'Business';
-                            });
-                          },
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Column(
+                      children: const [
+                        Text(
+                          "Mau pergi ke mana?",
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 20),
+                  ),
+                ),
 
-                    // Tombol Search
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                // 2. Card Form Mengambang
+                Container(
+                  margin: const EdgeInsets.only(top: 60, left: 20, right: 20),
+                  padding: const EdgeInsets.all(25),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(25),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 20,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  // 🔹 AMBIL DATA DARI FIREBASE (Field: name)
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('destinations')
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      // State Loading
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+
+                      // State Kosong/Error
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const Center(
+                          child: Text("Data destinasi kosong."),
+                        );
+                      }
+
+                      // ✅ PENGAMBILAN DATA (FIXED: Menggunakan 'name')
+                      List<String> cityList = snapshot.data!.docs
+                          .map((doc) {
+                            final data = doc.data() as Map<String, dynamic>;
+                            // Mengambil field 'name' sesuai konfirmasi Anda
+                            return data['name']?.toString() ?? 'Unknown';
+                          })
+                          .toSet()
+                          .toList(); // Hapus duplikat
+
+                      cityList.sort(); // Urutkan abjad A-Z
+
+                      // UI FORM INPUT
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // --- INPUT DARI (Dropdown) ---
+                          _buildDropdownInput(
+                            label: "Dari",
+                            hint: "Pilih Kota Asal",
+                            icon: Icons.flight_takeoff,
+                            items: cityList,
+                            value: _selectedOrigin,
+                            onChanged: (val) =>
+                                setState(() => _selectedOrigin = val),
                           ),
-                        ),
-                        onPressed: () {
-                          // Validasi Input
-                          if (fromController.text.isEmpty || toController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please fill both From and To fields'),
-                                backgroundColor: Colors.redAccent,
-                              ),
-                            );
-                          } else {
-                            // 🚀 Navigasi ke halaman hasil pencarian
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => SearchResultScreen(
-                                  from: fromController.text,
-                                  to: toController.text,
-                                  date: selectedDate,
-                                  passengers: passengers, // Kirim int
-                                  seatClass: seatClass,
+
+                          // Tombol Swap (Tukar)
+                          Center(
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF4F7FF),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 4,
                                 ),
                               ),
-                            );
-                          }
-                        },
-                        child: const Text(
-                          'Search Ticket',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.swap_vert_rounded,
+                                  color: primaryColor,
+                                ),
+                                onPressed: _swapLocations,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 30),
 
-              const Center(
-                child: Text(
-                  "Make your memories more memorable with us",
-                  style: TextStyle(color: Colors.grey),
+                          // --- INPUT KE (Dropdown) ---
+                          _buildDropdownInput(
+                            label: "Ke",
+                            hint: "Pilih Kota Tujuan",
+                            icon: Icons.flight_land,
+                            items: cityList,
+                            value: _selectedDestination,
+                            onChanged: (val) =>
+                                setState(() => _selectedDestination = val),
+                          ),
+
+                          const SizedBox(height: 25),
+                          const Divider(),
+                          const SizedBox(height: 15),
+
+                          // --- TANGGAL & PENUMPANG ---
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildSelector(
+                                  label: "Berangkat",
+                                  value: DateFormat(
+                                    'd MMM yyyy',
+                                  ).format(selectedDate),
+                                  icon: Icons.calendar_today_rounded,
+                                  onTap: () => _selectDate(context),
+                                ),
+                              ),
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: _buildSelector(
+                                  label: "Penumpang",
+                                  value: "$passengers Orang",
+                                  icon: Icons.person_rounded,
+                                  onTap: () {
+                                    setState(() {
+                                      passengers = passengers >= 5
+                                          ? 1
+                                          : passengers + 1;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          // --- KELAS KURSI ---
+                          Text(
+                            "Kelas Kabin",
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _buildClassOption("Economy", true),
+                              const SizedBox(width: 10),
+                              _buildClassOption("Business", false),
+                            ],
+                          ),
+
+                          const SizedBox(height: 30),
+
+                          // --- TOMBOL CARI ---
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                elevation: 5,
+                              ),
+                              onPressed: () {
+                                // Validasi Input
+                                if (_selectedOrigin == null ||
+                                    _selectedDestination == null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Harap pilih Kota Asal dan Tujuan!',
+                                      ),
+                                      backgroundColor: Colors.redAccent,
+                                    ),
+                                  );
+                                } else if (_selectedOrigin ==
+                                    _selectedDestination) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Kota Asal dan Tujuan tidak boleh sama!',
+                                      ),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                } else {
+                                  // 🚀 Navigasi ke Hasil Pencarian
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => SearchResultScreen(
+                                        from: _selectedOrigin!,
+                                        to: _selectedDestination!,
+                                        date: selectedDate,
+                                        passengers: passengers,
+                                        seatClass: seatClass,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: const Text(
+                                'Cari Penerbangan',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+            const SizedBox(height: 30),
+          ],
         ),
       ),
     );
   }
 
-  // Helper untuk nama bulan
-  String _monthName(int month) {
-    const months = [
-      '', 'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return months[month];
+  // ======================
+  // WIDGET HELPERS
+  // ======================
+
+  // Widget Dropdown
+  Widget _buildDropdownInput({
+    required String label,
+    required String hint,
+    required IconData icon,
+    required List<String> items,
+    required String? value,
+    required Function(String?) onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F9FD),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              hint: Row(
+                children: [
+                  Icon(icon, color: Colors.blueAccent, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    hint,
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                      fontWeight: FontWeight.normal,
+                    ),
+                  ),
+                ],
+              ),
+              isExpanded: true,
+              icon: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: Colors.blueAccent,
+              ),
+              items: items.map((String city) {
+                return DropdownMenuItem<String>(
+                  value: city,
+                  child: Text(
+                    city,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
+                    ),
+                  ),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
   }
-}
 
-// 🔹 Widget kecil untuk kotak opsi (Passengers / Class)
-class _OptionBox extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+  // Widget Selector Tanggal/Penumpang
+  Widget _buildSelector({
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FD),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: Colors.blueAccent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    value,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-  const _OptionBox({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  // Widget Opsi Kelas
+  Widget _buildClassOption(String label, bool isSelected) {
     return Expanded(
       child: GestureDetector(
-        onTap: onTap,
+        onTap: () {
+          setState(() {
+            seatClass = label;
+          });
+        },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF2F5FF),
+            color: seatClass == label
+                ? Colors.blueAccent.withOpacity(0.1)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: seatClass == label
+                  ? Colors.blueAccent
+                  : Colors.grey.shade300,
+            ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: Colors.black54),
-              const SizedBox(width: 8),
-              Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: seatClass == label ? Colors.blueAccent : Colors.grey,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ),
       ),

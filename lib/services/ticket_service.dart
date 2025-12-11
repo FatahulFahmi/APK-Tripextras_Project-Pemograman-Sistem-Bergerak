@@ -5,8 +5,8 @@ import '../models/ticket_model.dart'; // Sesuaikan path jika perlu
 
 class TicketService {
   // Referensi ke koleksi 'tickets' di Firestore
-  final CollectionReference _ticketsCollection =
-      FirebaseFirestore.instance.collection('tickets');
+  final CollectionReference _ticketsCollection = FirebaseFirestore.instance
+      .collection('tickets');
 
   // 1. FUNGSI CREATE: Membuat tiket baru
   Future<void> createTicket(TicketModel ticket) async {
@@ -26,10 +26,10 @@ class TicketService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return TicketModel.fromSnapshot(doc);
-      }).toList();
-    });
+          return snapshot.docs.map((doc) {
+            return TicketModel.fromSnapshot(doc);
+          }).toList();
+        });
   }
 
   // 3. FUNGSI DELETE: Menghapus tiket berdasarkan ID
@@ -48,8 +48,9 @@ class TicketService {
   // Mengambil semua user (untuk dropdown)
   Future<List<QueryDocumentSnapshot>> getAllUsers() async {
     try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('users').get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .get();
       return snapshot.docs;
     } catch (e) {
       throw Exception('Gagal mengambil data users: $e');
@@ -62,8 +63,9 @@ class TicketService {
   Future<List<QueryDocumentSnapshot>> getAllFlights() async {
     try {
       // Ganti 'trips' menjadi 'flights' agar konsisten
-      final snapshot =
-          await FirebaseFirestore.instance.collection('flights').get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('flights')
+          .get();
       return snapshot.docs;
     } catch (e) {
       // Perbarui juga pesan errornya

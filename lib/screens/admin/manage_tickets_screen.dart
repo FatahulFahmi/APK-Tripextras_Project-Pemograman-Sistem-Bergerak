@@ -1,81 +1,106 @@
-// lib/screens/admin/manage_tickets_screen.dart
-
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-// Import model dan service Anda
-// SESUAIKAN PATH/NAMA FILE INI
-import '../../models/ticket_model.dart';
-import '../../services/ticket_service.dart';
-// Asumsi model Anda sudah ada
-import '../../models/user_model.dart';
-import '../../models/trip_model.dart';
-// ✅ TAMBAHAN BARU: Import Activity Service untuk mencatat log
-import '../../services/activity_service.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 class ManageTicketsScreen extends StatefulWidget {
-  const ManageTicketsScreen({Key? key}) : super(key: key);
+  const ManageTicketsScreen({super.key});
 
   @override
-  _ManageTicketsScreenState createState() => _ManageTicketsScreenState();
+  State<ManageTicketsScreen> createState() => _ManageTicketsScreenState();
 }
 
 class _ManageTicketsScreenState extends State<ManageTicketsScreen> {
-  final TicketService _ticketService = TicketService();
-  // ✅ TAMBAHAN BARU: Buat instance dari Activity Service
-  final ActivityService _activityService = ActivityService.instance;
+  // Fungsi untuk Memverifikasi Tiket
+  Future<void> _verifyTicket(String ticketId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('tickets')
+          .doc(ticketId)
+          .update({'status': 'verified'}); // Mengubah status menjadi verified
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Tiket berhasil diverifikasi!"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Gagal verifikasi: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    const Color primaryColor = Colors.blueAccent;
+
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F7FF),
       appBar: AppBar(
-        title: Text('Manage Tickets'),
+        title: const Text(
+          "Kelola Tiket Pesanan",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: primaryColor,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
-      // Tombol (+) untuk membuat tiket baru
-      floatingActionButton: FloatingActionButton(
-        child: Icon(Icons.add),
-        onPressed: () {
-          _showCreateTicketDialog(context);
-        },
-      ),
-      // Body: Menampilkan daftar tiket yang sudah ada
-      body: StreamBuilder<List<TicketModel>>(
-        stream: _ticketService.getTicketsStream(),
+      // 1. Ambil Data Tiket dari Koleksi 'tickets'
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('tickets')
+            .orderBy('bookingDate', descending: true) // Tiket terbaru di atas
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return Center(child: Text('Belum ada tiket.'));
+            return const Center(child: CircularProgressIndicator());
           }
 
-          List<TicketModel> tickets = snapshot.data!;
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+            return _buildEmptyState();
+          }
 
           return ListView.builder(
-            itemCount: tickets.length,
+            padding: const EdgeInsets.all(16),
+            itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
-              TicketModel ticket = tickets[index];
-              return ListTile(
-                title: Text('${ticket.userName} - ${ticket.flightDestination}'),
-                subtitle: Text('Seat: ${ticket.seatNumber} | ${ticket.status}'),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete, color: Colors.red),
-                  onPressed: () async {
-                    // TODO: Tambahkan dialog konfirmasi sebelum hapus
-                    if (ticket.id != null) {
-                      await _ticketService.deleteTicket(ticket.id!);
+              final ticketDoc = snapshot.data!.docs[index];
+              final ticketData = ticketDoc.data() as Map<String, dynamic>;
+              final String flightId = ticketData['flightId'] ?? '';
 
-                      // ✅ TAMBAHAN BARU: Catat log saat hapus
-                      _activityService.createActivity(
-                        'Tiket untuk ${ticket.userName} (${ticket.flightDestination}) dihapus',
-                        iconType: 'ticket_delete',
-                      );
-                    }
-                  },
-                ),
+              // 2. Ambil Detail Penerbangan berdasarkan flightId (Relasi Data)
+              return FutureBuilder<DocumentSnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('flights')
+                    .doc(flightId)
+                    .get(),
+                builder: (context, flightSnapshot) {
+                  if (!flightSnapshot.hasData) {
+                    return const SizedBox(
+                      height: 100,
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  // Handle jika data flight terhapus tapi tiket masih ada
+                  final flightData = flightSnapshot.data!.exists
+                      ? flightSnapshot.data!.data() as Map<String, dynamic>
+                      : null;
+
+                  return _buildTicketAdminCard(
+                    ticketDoc.id,
+                    ticketData,
+                    flightData,
+                  );
+                },
               );
             },
           );
@@ -84,211 +109,208 @@ class _ManageTicketsScreenState extends State<ManageTicketsScreen> {
     );
   }
 
-  // ---
-  // DIALOG UNTUK MEMBUAT TIKET BARU
-  // ---
-  void _showCreateTicketDialog(BuildContext context) {
-    // Controller untuk text field
-    final TextEditingController _seatController = TextEditingController();
+  // --- WIDGET KARTU TIKET ADMIN ---
+  Widget _buildTicketAdminCard(
+    String ticketId,
+    Map<String, dynamic> ticket,
+    Map<String, dynamic>? flight,
+  ) {
+    final bool isVerified = ticket['status'] == 'verified';
+    final String airline = flight?['airline'] ?? 'Unknown Airline';
+    final String route = flight != null
+        ? "${flight['origin']} ➔ ${flight['destination']}"
+        : "Rute Tidak Dikenal";
 
-    // Variabel untuk menyimpan nilai dropdown
-    UserModel? _selectedUser;
-    TripModel? _selectedTrip;
-    String _selectedStatus = 'confirmed'; // Nilai default
+    // Format Tanggal Booking
+    final Timestamp? ts = ticket['bookingDate'];
+    final String bookingDate = ts != null
+        ? DateFormat('dd MMM yyyy, HH:mm').format(ts.toDate())
+        : '-';
 
-    // Data untuk dropdown
-    List<UserModel> _userList = [];
-    List<TripModel> _tripList = [];
-
-    // Loading state untuk dropdown
-    bool _isLoadingUsers = true;
-    bool _isLoadingTrips = true;
-
-    // Ambil data users & trips untuk dropdown
-    // Kita pakai StatefulBuilder agar dialog bisa update state-nya sendiri
-
-    // Fungsi untuk mengambil data
-    void _fetchDropdownData(StateSetter setState) async {
-      // Ambil Users
-      try {
-        // ✅ PERBAIKAN: Memanggil fungsi dari service
-        var userDocs = await _ticketService.getAllUsers();
-        // ✅ PERBAIKAN: Hapus .docs karena userDocs sudah List
-        _userList =
-            userDocs.map((doc) => UserModel.fromSnapshot(doc)).toList();
-      } catch (e) {
-        print(e);
-      }
-      setState(() => _isLoadingUsers = false);
-
-      // ✅ PERBAIKAN: Mengambil dari 'flights' melalui service
-      try {
-        // Panggil fungsi service yang sudah benar
-        var flightDocs = await _ticketService.getAllFlights();
-        // ✅ PERBAIKAN: Hapus .docs karena flightDocs sudah List
-        _tripList =
-            flightDocs.map((doc) => TripModel.fromSnapshot(doc)).toList();
-      } catch (e) {
-        print(e);
-      }
-      setState(() => _isLoadingTrips = false);
-    }
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Create New Ticket'),
-          content: StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              // Panggil fetch data sekali saja saat dialog pertama kali build
-              if (_isLoadingUsers && _isLoadingTrips) {
-                _fetchDropdownData(setState);
-              }
-
-              return SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    
-                    // --- Dropdown Users ---
-                    _isLoadingUsers
-                        ? CircularProgressIndicator()
-                        : DropdownButtonFormField<UserModel>(
-                            hint: Text('Select User'),
-                            // ✅ PERBAIKAN UI: Agar dropdown mengisi ruang
-                            isExpanded: true, 
-                            value: _selectedUser,
-                            onChanged: (UserModel? newValue) {
-                              setState(() => _selectedUser = newValue);
-                            },
-                            items: _userList.map((UserModel user) {
-                              return DropdownMenuItem<UserModel>(
-                                value: user,
-                                // ✅ PERBAIKAN UI: Memotong teks jika panjang
-                                child: Text(
-                                  user.name, 
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                    
-                    SizedBox(height: 16),
-
-                    // --- Dropdown Trips/Flights ---
-                    _isLoadingTrips
-                        ? CircularProgressIndicator()
-                        : DropdownButtonFormField<TripModel>(
-                            hint: Text('Select Flight'),
-                            // ✅ PERBAIKAN UI: Agar dropdown mengisi ruang
-                            isExpanded: true,
-                            value: _selectedTrip,
-                            onChanged: (TripModel? newValue) {
-                              setState(() => _selectedTrip = newValue);
-                            },
-                            items: _tripList.map((TripModel trip) {
-                              return DropdownMenuItem<TripModel>(
-                                value: trip,
-                                // ✅ PERBAIKAN UI: Memotong teks jika panjang
-                                child: Text(
-                                  '${trip.origin} - ${trip.destination}',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                    
-                    SizedBox(height: 16),
-
-                    // --- Input Seat Number ---
-                    TextFormField(
-                      controller: _seatController,
-                      decoration: InputDecoration(
-                        labelText: 'Seat Number',
-                        border: OutlineInputBorder(),
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: Nama Penumpang & Status
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ticket['passengerName'] ?? 'No Name',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
                       ),
                     ),
-                    
-                    SizedBox(height: 16),
-
-                    // --- Dropdown Status ---
-                    DropdownButtonFormField<String>(
-                      // ✅ PERBAIKAN UI: Agar dropdown mengisi ruang
-                      isExpanded: true,
-                      value: _selectedStatus,
-                      onChanged: (String? newValue) {
-                        if (newValue != null) {
-                          setState(() => _selectedStatus = newValue);
-                        }
-                      },
-                      items: <String>['confirmed', 'pending', 'cancelled']
-                          .map<DropdownMenuItem<String>>((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value.toUpperCase()),
-                        );
-                      }).toList(),
+                    Text(
+                      "ID: ${ticket['passengerId']}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
-              );
-            },
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(),
+                // Badge Status
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isVerified
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isVerified ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                  child: Text(
+                    isVerified ? "VERIFIED" : "PENDING",
+                    style: TextStyle(
+                      color: isVerified ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            ElevatedButton(
-              child: Text('Save'),
-              onPressed: () async {
-                // --- Validasi Sederhana ---
-                if (_selectedUser == null ||
-                    _selectedTrip == null ||
-                    _seatController.text.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Please fill all fields!'),
-                      backgroundColor: Colors.red));
-                  return; // Stop jika data tidak lengkap
-                }
+            const Divider(height: 25),
 
-                // --- Buat Objek TicketModel ---
-                final newTicket = TicketModel(
-                  userId: _selectedUser!.id, // ASUMSI 'id'
-                  userName: _selectedUser!.name, // ASUMSI 'name'
-                  flightId: _selectedTrip!.id, // ASUMSI 'id'
-                  flightDestination:
-                      _selectedTrip!.destination, // ASUMSI 'destination'
-                  seatNumber: _seatController.text,
-                  status: _selectedStatus,
-                  createdAt: Timestamp.now(),
-                );
-
-                // --- Kirim ke Service ---
-                try {
-                  await _ticketService.createTicket(newTicket);
-
-                  // ✅ TAMBAHAN BARU: Catat log aktivitas!
-                  await _activityService.createActivity(
-                    'Tiket baru untuk ${_selectedUser!.name} (${_selectedTrip!.origin} - ${_selectedTrip!.destination})',
-                    iconType: 'ticket', // Tipe ikon 'ticket'
-                  );
-
-                  Navigator.of(context).pop(); // Tutup dialog
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Ticket created successfully!'),
-                      backgroundColor: Colors.green));
-                } catch (e) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Error: $e'), backgroundColor: Colors.red));
-                }
-              },
+            // Body: Detail Penerbangan
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.flight, color: Colors.blue),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        airline,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      Text(
+                        route,
+                        style: const TextStyle(color: Colors.black87),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "Booking: $bookingDate",
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
+
+            const SizedBox(height: 20),
+
+            // Footer: Tombol Aksi
+            isVerified
+                ? SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: null, // Disabled karena sudah verifikasi
+                      icon: const Icon(Icons.check, color: Colors.green),
+                      label: const Text(
+                        "Tiket Telah Diverifikasi",
+                        style: TextStyle(color: Colors.green),
+                      ),
+                    ),
+                  )
+                : SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () =>
+                          _showVerifyDialog(ticketId, ticket['passengerName']),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      icon: const Icon(
+                        Icons.verified_user,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      label: const Text(
+                        "Verifikasi Tiket",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
           ],
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  // Dialog Konfirmasi Verifikasi
+  void _showVerifyDialog(String ticketId, String name) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Verifikasi Pembayaran"),
+        content: Text(
+          "Apakah Anda yakin ingin memverifikasi tiket atas nama $name?\n\nPastikan pembayaran sudah diterima.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _verifyTicket(ticketId); // Panggil fungsi update status
+            },
+            child: const Text("Ya, Verifikasi"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.confirmation_number_outlined,
+            size: 80,
+            color: Colors.grey[300],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            "Belum ada pesanan tiket masuk.",
+            style: TextStyle(color: Colors.grey[500], fontSize: 16),
+          ),
+        ],
+      ),
     );
   }
 }
-

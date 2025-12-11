@@ -1,56 +1,68 @@
-// lib/models/ticket_model.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TicketModel {
-  final String? id; // ID Dokumen dari Firestore
+  final String id; // ID Dokumen Firestore
   final String userId;
-  final String userName; // Denormalisasi (duplikasi) data untuk kemudahan
   final String flightId;
-  final String flightDestination; // Denormalisasi data
-  final String seatNumber;
-  final String status;
-  final Timestamp createdAt;
+  final String passengerName;
+  final String passengerId; // NIK / Paspor
+  final String seatClass;
+  final String paymentMethod;
+  final String status; // 'paid', 'verified', dll
+  final String totalPrice;
+  final Timestamp bookingDate;
 
   TicketModel({
-    this.id,
+    required this.id,
     required this.userId,
-    required this.userName,
     required this.flightId,
-    required this.flightDestination,
-    required this.seatNumber,
+    required this.passengerName,
+    required this.passengerId,
+    required this.seatClass,
+    required this.paymentMethod,
     required this.status,
-    required this.createdAt,
+    required this.totalPrice,
+    required this.bookingDate,
   });
 
-  // Method untuk mengubah object TicketModel menjadi Map
-  // Ini digunakan saat MENULIS data ke Firestore
-  Map<String, dynamic> toMap() {
-    return {
-      'userId': userId,
-      'userName': userName,
-      'flightId': flightId,
-      'flightDestination': flightDestination,
-      'seatNumber': seatNumber,
-      'status': status,
-      'createdAt': createdAt,
-    };
-  }
+  // Getter agar kode 'ticket.ticketId' di E-Ticket tidak error
+  String get ticketId => id;
 
-  // Factory constructor untuk membuat TicketModel dari DocumentSnapshot
-  // Ini digunakan saat MEMBACA data dari Firestore
+  // 1. FACTORY: Mengubah data Firestore (Map) MENJADI Object TicketModel
+  // Dipakai saat READ data
   factory TicketModel.fromSnapshot(DocumentSnapshot doc) {
-    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-    
+    final data = doc.data() as Map<String, dynamic>;
+
     return TicketModel(
       id: doc.id,
       userId: data['userId'] ?? '',
-      userName: data['userName'] ?? '',
       flightId: data['flightId'] ?? '',
-      flightDestination: data['flightDestination'] ?? '',
-      seatNumber: data['seatNumber'] ?? '',
-      status: data['status'] ?? '',
-      createdAt: data['createdAt'] ?? Timestamp.now(),
+      passengerName: data['passengerName'] ?? 'Penumpang',
+      passengerId: data['passengerId'] ?? '-',
+      seatClass: data['seatClass'] ?? 'Economy',
+      paymentMethod: data['paymentMethod'] ?? 'Virtual Account',
+      status: data['status'] ?? 'pending',
+      totalPrice: data['totalPrice'] ?? '0',
+      bookingDate: data['bookingDate'] is Timestamp
+          ? data['bookingDate']
+          : Timestamp.now(),
     );
+  }
+
+  // 2. METHOD BARU: Mengubah Object TicketModel MENJADI Map
+  // ✅ Dipakai saat CREATE/UPDATE data ke Firestore (Ini yang bikin error tadi)
+  Map<String, dynamic> toMap() {
+    return {
+      'userId': userId,
+      'flightId': flightId,
+      'passengerName': passengerName,
+      'passengerId': passengerId,
+      'seatClass': seatClass,
+      'paymentMethod': paymentMethod,
+      'status': status,
+      'totalPrice': totalPrice,
+      'bookingDate': bookingDate,
+      // Note: 'id' tidak ikut disimpan karena itu ID dokumen yang digenerate otomatis
+    };
   }
 }
